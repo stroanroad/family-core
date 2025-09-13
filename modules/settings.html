@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Settings - Luma Family Core</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+  .card{background:#0f1220;color:#e8f0ff;padding:1rem;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.25);margin:.8rem 0;}
+  .row{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+  input,select,button,textarea{padding:.6rem .8rem;border-radius:12px;border:1px solid #2a3355;background:#11152a;color:#e8f0ff}
+  button{cursor:pointer;border:1px solid #2f6df3}
+  table{width:100%;border-collapse:collapse;margin-top:.8rem}
+  th,td{padding:.6rem;border-bottom:1px solid #28304e;text-align:left}
+  .muted{color:#9bb0ff;opacity:.85}
+  .pill{padding:.2rem .6rem;border-radius:999px;border:1px solid #2a3355;font-size:.85rem}
+  textarea{width:100%;min-height:160px}
+</style>
+</head>
+<body>
+<header>
+  <h1>⚙️ Settings</h1>
+  <p class="muted">Base currency, FX rates, fiscal year start, and tax profiles.</p>
+  <p><a class="link" href="../index.html">⬅ Back to Dashboard</a></p>
+</header>
+<main>
+  <section class="card">
+    <h2>Reporting Basics</h2>
+    <div class="row">
+      <label for="baseCcy">Base currency</label>
+      <select id="baseCcy">
+        <option>GBP</option><option>EUR</option><option>USD</option>
+      </select>
+      <label for="fyStart">Fiscal year starts in</label>
+      <select id="fyStart">
+        <option value="1">January</option><option value="2">February</option><option value="3">March</option>
+        <option value="4">April</option><option value="5">May</option><option value="6">June</option>
+        <option value="7">July</option><option value="8">August</option><option value="9">September</option>
+        <option value="10">October</option><option value="11">November</option><option value="12">December</option>
+      </select>
+      <button id="saveBasics">Save</button>
+    </div>
+    <p class="muted">Tax profiles & reports will use this base currency and fiscal-year start.</p>
+  </section>
+
+  <section class="card">
+    <h2>FX Rates (to Base)</h2>
+    <div class="row">
+      <input id="fxCode" placeholder="Currency code (e.g., EUR)">
+      <input type="number" step="0.000001" id="fxRate" placeholder="Rate to base (e.g., 0.855)">
+      <button id="addFx">Add/Update</button>
+    </div>
+    <table>
+      <thead><tr><th>Currency</th><th>Rate → Base</th><th>Action</th></tr></thead>
+      <tbody id="fxTable"></tbody>
+    </table>
+    <p class="muted">Example: Base=GBP, EUR→GBP=0.855. Reports multiply foreign amounts by this rate on the transaction date (static table for now).</p>
+  </section>
+
+  <section class="card">
+    <h2>Tax Profiles</h2>
+    <p class="muted">Profiles map your categories to tax buckets (for summaries). You can keep multiple countries and switch per report.</p>
+    <div class="row">
+      <select id="profileSelect"></select>
+      <button id="newProfile">New</button>
+      <button id="deleteProfile" class="pill" style="border-color:#ef4444;color:#ef4444">Delete</button>
+      <button id="saveProfile">Save</button>
+    </div>
+    <p class="muted">Edit JSON below (category → bucket). Buckets like: EmploymentIncome, TradingIncome, Dividends, Interest, AllowableExpenses, NonDeductible, etc.</p>
+    <textarea id="profileJson"></textarea>
+    <div class="row" style="margin-top:.5rem">
+      <button id="loadTemplateUK">Template: UK (HMRC-ish)</button>
+      <button id="loadTemplateIE">Template: Ireland</button>
+      <button id="loadTemplateUS">Template: US (simplified)</button>
+    </div>
+  </section>
+</main>
+
+<script>
+  const SKEY="luma_settings_v1";
+  const state = JSON.parse(localStorage.getItem(SKEY)||JSON.stringify({
+    base:"GBP",
+    fyStart:4, // April (UK default)
+    fx: {"GBP":1,"EUR":0.855,"USD":0.78},
+    profiles:{
+      "UK Default":{
+        "Salary":"EmploymentIncome",
+        "Dividends":"Dividends",
+        "Interest":"Interest",
+        "Rent":"AllowableExpenses",
+        "Utilities":"AllowableExpenses",
+        "Groceries":"NonDeductible",
+        "Travel":"AllowableExpenses",
+        "Tax":"TaxesPaid",
+        "HMRC":"TaxesPaid",
+        "Medical":"NonDeductible",
+        "Education":"NonDeductible",
+        "Other":"Other"
+      }
+    },
+    currentProfile:"UK Default"
+  }));
+
+  const $=id=>document.getElementById(id);
+  function save(){ localStorage.setItem(SKEY, JSON.stringify(state)); }
+  function refreshBasics(){
+    $("baseCcy").value=state.base;
+    $("fyStart").value=String(state.fyStart);
+  }
+  function refreshFx(){
+    const tbody=$("fxTable");
+    const rows = Object.entries(state.fx).map(([ccy,rate])=>`
+      <tr>
+        <td>${ccy}</td>
+        <td>${rate}</td>
+        <td><button class="pill" data-ccy="${ccy}">Delete</button></td>
+      </tr>`).join("");
+    tbody.innerHTML = rows || '<tr><td colspan="3" class="muted">No FX rows.</td></tr>';
+    tbody.querySelectorAll("button").forEach(b=>{
+      b.onclick=()=>{
+        const c=b.dataset.ccy;
+        if(c===state.base){ alert("Cannot delete base currency."); return; }
+        delete state.fx[c]; save(); refreshFx();
+      }
+    });
+  }
+  function refreshProfiles(){
+    const sel=$("profileSelect");
+    sel.innerHTML = Object.keys(state.profiles).map(n=>`<option ${n===state.currentProfile?'selected':''}>${n}</option>`).join("");
+    loadProfile(sel.value);
+  }
+  function loadProfile(name){
+    state.currentProfile=name;
+    const json = JSON.stringify(state.profiles[name]||{}, null, 2);
+    $("profileJson").value = json;
+    save();
+  }
+
+  $("saveBasics").onclick=()=>{
+    state.base=$("baseCcy").value;
+    state.fyStart=+$("fyStart").value;
+    state.fx[state.base]=1;
+    save(); refreshFx(); alert("Saved.");
+  };
+  $("addFx").onclick=()=>{
+    const c=($("fxCode").value||"").toUpperCase().trim();
+    const r=parseFloat($("fxRate").value);
+    if(!c||isNaN(r)) return alert("Enter code and rate.");
+    if(c===state.base) { alert("Base is always 1."); return; }
+    state.fx[c]=r; $("fxCode").value=""; $("fxRate").value="";
+    save(); refreshFx();
+  };
+
+  $("profileSelect").onchange=e=>loadProfile(e.target.value);
+  $("newProfile").onclick=()=>{
+    const n=prompt("Profile name?");
+    if(!n) return;
+    if(state.profiles[n]) return alert("Exists.");
+    state.profiles[n]={};
+    state.currentProfile=n; save(); refreshProfiles();
+  };
+  $("deleteProfile").onclick=()=>{
+    const n=$("profileSelect").value;
+    if(!confirm("Delete profile "+n+"?")) return;
+    delete state.profiles[n];
+    state.currentProfile = Object.keys(state.profiles)[0] || "Default";
+    if(!state.profiles[state.currentProfile]) state.profiles[state.currentProfile]={};
+    save(); refreshProfiles();
+  };
+  $("saveProfile").onclick=()=>{
+    try{
+      const obj=JSON.parse($("profileJson").value);
+      state.profiles[state.currentProfile]=obj; save(); alert("Saved.");
+    }catch(e){ alert("Invalid JSON: "+e.message); }
+  };
+
+  // Templates
+  $("loadTemplateUK").onclick=()=>{
+    $("profileJson").value = JSON.stringify({
+      "Salary":"EmploymentIncome",
+      "SelfEmployment":"TradingIncome",
+      "Dividends":"Dividends",
+      "Interest":"Interest",
+      "CapitalGains":"CapitalGains",
+      "Rent":"AllowableExpenses",
+      "Utilities":"AllowableExpenses",
+      "Phone&Internet":"AllowableExpenses",
+      "Travel":"AllowableExpenses",
+      "Meals":"NonDeductible",
+      "Groceries":"NonDeductible",
+      "Medical":"NonDeductible",
+      "Education":"NonDeductible",
+      "HMRC":"TaxesPaid",
+      "Insurance":"AllowableExpenses",
+      "Other":"Other"
+    },null,2);
+  };
+  $("loadTemplateIE").onclick=()=>{
+    $("profileJson").value = JSON.stringify({
+      "Salary":"EmploymentIncome",
+      "SelfEmployment":"TradingIncome",
+      "Dividends":"Dividends",
+      "DepositInterest":"Interest",
+      "Rent":"AllowableExpenses",
+      "Utilities":"AllowableExpenses",
+      "Motor&Travel":"AllowableExpenses",
+      "Groceries":"NonDeductible",
+      "Medical":"NonDeductible",
+      "Revenue":"TaxesPaid",
+      "Other":"Other"
+    },null,2);
+  };
+  $("loadTemplateUS").onclick=()=>{
+    $("profileJson").value = JSON.stringify({
+      "W2Wages":"EmploymentIncome",
+      "1099Income":"TradingIncome",
+      "Dividends":"Dividends",
+      "Interest":"Interest",
+      "CapGains":"CapitalGains",
+      "Rent":"AllowableExpenses",
+      "Utilities":"AllowableExpenses",
+      "Travel":"AllowableExpenses",
+      "Meals&Entertainment":"NonDeductible",
+      "Groceries":"NonDeductible",
+      "Medical":"NonDeductible",
+      "IRS":"TaxesPaid",
+      "Other":"Other"
+    },null,2);
+  };
+
+  // init
+  refreshBasics(); refreshFx(); refreshProfiles();
+</script>
+</body>
+</html>

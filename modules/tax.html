@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Tax & Compliance - Luma Family Core</title>
+<link rel="stylesheet" href="../style.css">
+<style>
+  .card{background:#0f1220;color:#e8f0ff;padding:1rem;border-radius:14px;box-shadow:0 6px 20px rgba(0,0,0,.25);margin:.8rem 0;}
+  .row{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center}
+  input,select,button{padding:.6rem .8rem;border-radius:12px;border:1px solid #2a3355;background:#11152a;color:#e8f0ff}
+  button{cursor:pointer;border:1px solid #2f6df3}
+  table{width:100%;border-collapse:collapse;margin-top:.8rem}
+  th,td{padding:.6rem;border-bottom:1px solid #28304e;text-align:left}
+  .muted{color:#9bb0ff;opacity:.85}
+  .pill{padding:.2rem .6rem;border-radius:999px;border:1px solid #2a3355;font-size:.85rem}
+  .income{color:#23c55e}.expense{color:#ef4444}
+</style>
+</head>
+<body>
+<header>
+  <h1>🧾 Tax & Compliance</h1>
+  <p class="muted">Multi-country buckets, FX to base, fiscal-year rollup, exports.</p>
+  <p><a class="link" href="../index.html">⬅ Back to Dashboard</a></p>
+</header>
+<main>
+  <section class="card">
+    <h2>Report Setup</h2>
+    <div class="row">
+      <label>Profile</label>
+      <select id="profile"></select>
+      <label>Tax year ending</label>
+      <select id="yearEnd"></select>
+      <label>Account</label>
+      <select id="accountFilter"></select>
+      <label>Type</label>
+      <select id="typeFilter"><option value="">All</option><option value="income">Income</option><option value="expense">Expense</option></select>
+      <button id="run">Run</button>
+      <button id="exportSummary">Export Summary CSV</button>
+      <button id="exportAudit">Export Audit CSV</button>
+    </div>
+    <p class="muted" id="context"></p>
+  </section>
+
+  <section class="card">
+    <h2>Summary by Bucket (Base Currency)</h2>
+    <table>
+      <thead><tr><th>Bucket</th><th>Total</th></tr></thead>
+      <tbody id="summaryBody"></tbody>
+    </table>
+    <p id="net" style="font-weight:700"></p>
+  </section>
+</main>
+
+<script>
+  const FKEY="luma_finance_pro_v1";
+  const SKEY="luma_settings_v1";
+  const settings = JSON.parse(localStorage.getItem(SKEY)||"{}");
+  const data = JSON.parse(localStorage.getItem(FKEY)||"{}");
+
+  const $=id=>document.getElementById(id);
+
+  function fyWindow(yearEnd){
+    // Uses settings.fyStart as start month (1-12). yearEnd is the end year.
+    const m = settings.fyStart || 1;
+    // start = first day of month m, in (yearEnd - 1) if month != January
+    const startY = (m===1) ? yearEnd : (yearEnd-1);
+    const start = new Date(Date.UTC(startY, m-1, 1));
+    // end = last day of month m-1 in yearEnd
+    const end = new Date(Date.UTC(yearEnd, (m===1?11:m-2), 1));
+    end.setUTCMonth(end.getUTCMonth()+1); end.setUTCDate(0); // last day prev month
+    return {startISO:start.toISOString().slice(0,10), endISO:end.toISOString().slice(0,10)};
+  }
+
+  function populate(){
+    // profiles
+    const profSel=$("profile");
+    const profiles = (settings.profiles||{});
+    profSel.innerHTML = Object.keys(profiles).map(n=>`<option ${n===settings.currentProfile?'selected':''}>${n}</option>`).join("");
+    // years (show 6 endings around current)
+    const ySel=$("yearEnd");
+    const Y=(new Date()).getUTCFullYear();
+    ySel.innerHTML = [Y-2,Y-1,Y,Y+1,Y+2,Y+3].map(y=>`<option ${y===Y?'selected':''}>${y}</option>`).join("");
+    // accounts
+    const accSel=$("accountFilter");
+    const accs=(data.accounts||["Main"]);
+    accSel.innerHTML = '<option value="">All</option>'+ accs.map(a=>{
+      const name = typeof a==="string" ? a : a.name;
+      return `<option value="${name}">${name}</option>`;
+    }).join("");
+  }
+
+  function rateFor(ccy){
+    const fx = settings.fx||{};
+    if(!ccy) return 1;
+    if(ccy===settings.base) return 1;
+    return fx[ccy]||1; // fallback 1 if unknown
+  }
+
+  function accCurrency(name){
+    const accs=(data.accounts||[]);
+    for(const a of accs){
+      if(typeof a==="string"){ if(a===name) return settings.base||"GBP"; }
+      else if(a.name===name) return a.currency||settings.base||"GBP";
+    }
+    return settings.base||"GBP";
+  }
+
+  function run(){
+    const profileName=$("profile").value;
+    const profile = (settings.profiles||{})[profileName]||{};
+    const yearEnd=+$("yearEnd").value;
+    const {startISO,endISO}=fyWindow(yearEnd);
+    const accFilter=$("accountFilter").value;
+    const typeFilter=$("typeFilter").value;
+
+    const base = settings.base||"GBP";
+    $("context").textContent = `Period: ${startISO} → ${endISO} • Base: ${base} • Profile: ${profileName}`;
+
+    const tx=(data.tx||[]).filter(t=>{
+      return (!accFilter || t.account===accFilter)
+        && (!typeFilter || t.type===typeFilter)
+        && t.date>=startISO && t.date<=endISO;
+    });
+
+    const buckets = {};
+    let incomeTotal=0, expenseTotal=0;
+
+    tx.forEach(t=>{
+      const cat = t.category||"Other";
+      const bucket = profile[cat] || "Other";
+      const ccy = accCurrency(t.account);
+      const rate = rateFor(ccy);
+      const amtBase = (t.type==="income" ? +t.amount : -t.amount) * rate;
+
+      buckets[bucket] = (buckets[bucket]||0) + amtBase;
+      if(t.type==="income") incomeTotal += amtBase; else expenseTotal += amtBase;
+    });
+
+    // render summary
+    const tbody=$("summaryBody");
+    const rows = Object.entries(buckets).sort(([a],[b])=>a.localeCompare(b))
+      .map(([bucket,total])=>`<tr><td>${bucket}</td><td>${total.toFixed(2)}</td></tr>`).join("");
+    tbody.innerHTML = rows || '<tr><td colspan="2" class="muted">No data.</td></tr>';
+
+    const net = incomeTotal + expenseTotal; // expenseTotal is negative
+    $("net").textContent = `Net (Income + Expenses): ${net.toFixed(2)} ${base}`;
+  }
+
+  function exportCsv(rows, filename){
+    const blob = new Blob([rows.join("\n")], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  }
+
+  $("run").onclick=run;
+
+  $("exportSummary").onclick=()=>{
+    const body = Array.from($("summaryBody").querySelectorAll("tr")).map(tr=>{
+      const tds=tr.querySelectorAll("td");
+      return tds.length? `${tds[0].textContent},${tds[1].textContent}` : "";
+    }).filter(Boolean);
+    exportCsv(["Bucket,Total"].concat(body), "tax-summary.csv");
+  };
+
+  $("exportAudit").onclick=()=>{
+    const profileName=$("profile").value;
+    const yearEnd=+$("yearEnd").value;
+    const {startISO,endISO}=fyWindow(yearEnd);
+    const accFilter=$("accountFilter").value;
+    const typeFilter=$("typeFilter").value;
+
+    const base = settings.base||"GBP";
+    const tx=(data.tx||[]).filter(t=>{
+      return (!accFilter || t.account===accFilter)
+        && (!typeFilter || t.type===typeFilter)
+        && t.date>=startISO && t.date<=endISO;
+    });
+
+    const rows = ["date,account,desc,type,category,payee,amount,account_ccy,rate_to_base,amount_base("+base+")"];
+    tx.forEach(t=>{
+      const ccy = (function(){ 
+        const accs=(data.accounts||[]);
+        for(const a of accs){ if((a.name||a)===t.account) return a.currency||settings.base||"GBP"; }
+        return settings.base||"GBP";
+      })();
+      const rate = (settings.fx||{})[ccy] || (ccy===base?1:1);
+      const amtBase = (t.type==="income" ? +t.amount : -t.amount) * rate;
+      const vals=[t.date,t.account,t.desc,t.type,t.category||"",t.payee||"",(+t.amount).toFixed(2),ccy,rate,amtBase.toFixed(2)]
+        .map(v=>('"'+String(v).replaceAll('"','""')+'"'));
+      rows.push(vals.join(","));
+    });
+    exportCsv(rows,"tax-audit.csv");
+  };
+
+  // init
+  populate(); run();
+</script>
+</body>
+</html>

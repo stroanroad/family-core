@@ -1,37 +1,99 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Luma Family Core</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    header {
+      text-align:center;
+      padding:2rem 1rem;
+    }
+    header h1 {
+      font-size:2rem;
+      margin-bottom:.5rem;
+    }
+    header p {
+      color:#9bb0ff;
+      margin:0;
+    }
+    .grid {
+      display:grid;
+      gap:1.5rem;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      padding:1rem;
+    }
+    .card h2 {
+      margin-top:0;
+      font-size:1.3rem;
+    }
+    footer {
+      text-align:center;
+      padding:2rem 1rem;
+      color:#9bb0ff;
+      font-size:.9rem;
+    }
+  </style>
 </head>
 <body>
   <header>
-    <div class="logo">
-      <div class="pulse"></div>
-      <h1>Luma Family Core</h1>
-    </div>
-    <p class="tagline">Encrypted by design – No one gets in.</p>
+    <h1>👪 Luma Family Core</h1>
+    <p>Your private, offline-first family dashboard</p>
   </header>
 
-  <main>
-    <h2>Main Dashboard</h2>
-    <ul>
-      <li><a href="modules/finance.html">💰 Finance</a></li>
-      <li><a href="modules/investments.html">📈 Investments</a></li>
-      <li><a href="modules/property.html">🏠 Property</a></li>
-      <li><a href="modules/health.html">❤️ Health</a></li>
-      <li><a href="modules/education.html">📚 Education</a></li>
-      <li><a href="modules/kids.html">👧🧒 Kids' Finance</a></li>
-    </ul>
+  <main class="grid">
+    <section class="card">
+      <h2>📚 Education</h2>
+      <p>Track study goals, homework, and progress.</p>
+      <p><a class="btn" href="modules/education.html">Open</a></p>
+    </section>
+
+    <section class="card">
+      <h2>💰 Finance</h2>
+      <p>Manage income, expenses, and family budgeting.</p>
+      <p><a class="btn" href="modules/finance.html">Open</a></p>
+    </section>
+
+    <section class="card">
+      <h2>❤️ Health</h2>
+      <p>Appointments, medications, and wellness logs.</p>
+      <p><a class="btn" href="modules/health.html">Open</a></p>
+    </section>
+
+    <section class="card">
+      <h2>📈 Investments</h2>
+      <p>Track shares, crypto, and other assets.</p>
+      <p><a class="btn" href="modules/investments.html">Open</a></p>
+    </section>
+
+    <section class="card">
+      <h2>👶 Kids</h2>
+      <p>Notes, milestones, and family activities.</p>
+      <p><a class="btn" href="modules/kids.html">Open</a></p>
+    </section>
+
+    <section class="card">
+      <h2>🐷 Kids Finance</h2>
+      <p>Allowances, chores, goals & piggy bank.</p>
+      <p><a class="btn" href="modules/kids-finance.html">Open</a></p>
+    </section>
+
+    <section class="card">
+      <h2>🏠 Property</h2>
+      <p>Track homes, mortgages, rent & maintenance.</p>
+      <p><a class="btn" href="modules/property.html">Open</a></p>
+    </section>
   </main>
+
+  <footer>
+    <p>🔒 All data stays private on this device — Anonymous by default.</p>
+  </footer>
 </body>
 </html>
 
-<!-- Kids Finance card -->
 <section class="card">
-  <h2>🐷 Kids Finance</h2>
-  <p>Allowances, chores, savings goals & piggy bank — simple and private.</p>
-  <p><a class="btn" href="modules/kids-finance.html">Open</a></p>
+  <h2>🧾 Tax & Compliance</h2>
+  <p>Profiles, fiscal year rollups, FX to base, exports.</p>
+  <p><a class="btn" href="modules/tax.html">Open</a></p>
 </section>
