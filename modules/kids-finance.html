@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kids Finance - Luma Family Core</title>
+  <link rel="stylesheet" href="../style.css" />
+  <style>
+    /* Page-local tweaks */
+    .grid { display:grid; gap:1rem; }
+    @media (min-width: 900px){ .grid{ grid-template-columns: 1fr 1fr; } }
+    .card { background:#0f1220; color:#e8f0ff; padding:1rem; border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,.25); }
+    .row { display:flex; gap:.5rem; flex-wrap:wrap; }
+    input, select, button {
+      padding:.6rem .8rem; border-radius:12px; border:1px solid #2a3355; background:#11152a; color:#e8f0ff;
+    }
+    button { cursor:pointer; border:1px solid #2f6df3; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { padding:.6rem; border-bottom:1px solid #28304e; }
+    progress { width:100%; height:14px; }
+    .muted { color:#9bb0ff; opacity:.8; }
+    .pill { padding:.2rem .6rem; border-radius:999px; border:1px solid #2a3355; font-size:.85rem; }
+    .success { border-color:#23c55e; color:#23c55e; }
+    .danger { border-color:#ef4444; color:#ef4444; }
+    .link { color:#8ab4ff; text-decoration:none; }
+    .link:hover { text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🐷 Kids Finance</h1>
+    <p class="muted">Allowances, chores, goals — simple and private (local on this device).</p>
+    <p><a class="link" href="../index.html">⬅ Back to Dashboard</a></p>
+  </header>
+
+  <main class="grid">
+    <!-- Allowance Tracker -->
+    <section class="card">
+      <h2>Allowance</h2>
+      <div class="row">
+        <input type="text" id="kidName" placeholder="Child name (e.g., Ava)" />
+        <input type="number" id="allowanceAmount" placeholder="Amount" step="0.01" />
+        <select id="allowancePeriod">
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        <button id="addAllowanceBtn">Add/Update</button>
+      </div>
+      <div id="allowanceList" style="margin-top:.75rem;"></div>
+    </section>
+
+    <!-- Chores -->
+    <section class="card">
+      <h2>Chores</h2>
+      <div class="row">
+        <input type="text" id="choreKid" placeholder="Child name" />
+        <input type="text" id="choreTitle" placeholder="Chore (e.g., Dishes)" />
+        <input type="number" id="choreReward" placeholder="Reward" step="0.01" />
+        <button id="addChoreBtn">Add Chore</button>
+      </div>
+      <table style="margin-top:.75rem;">
+        <thead><tr><th>Child</th><th>Chore</th><th>Reward</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="choreTableBody"></tbody>
+      </table>
+    </section>
+
+    <!-- Savings Goals -->
+    <section class="card">
+      <h2>Savings Goals</h2>
+      <div class="row">
+        <input type="text" id="goalKid" placeholder="Child name" />
+        <input type="text" id="goalTitle" placeholder="Goal (e.g., Lego Set)" />
+        <input type="number" id="goalTarget" placeholder="Target (£)" step="0.01" />
+        <button id="addGoalBtn">Add Goal</button>
+      </div>
+      <div id="goalsWrap" style="margin-top:.75rem;"></div>
+    </section>
+
+    <!-- Piggy Bank -->
+    <section class="card">
+      <h2>Piggy Bank</h2>
+      <div class="row">
+        <input type="text" id="bankKid" placeholder="Child name" />
+        <input type="number" id="bankAmount" placeholder="Amount (+/-)" step="0.01" />
+        <button id="bankDepositBtn">Add</button>
+        <button id="bankWithdrawBtn">Subtract</button>
+      </div>
+      <div id="balances" style="margin-top:.75rem;"></div>
+    </section>
+  </main>
+
+  <footer class="muted" style="margin-top:2rem;">
+    <span class="pill">Anonymous-by-default</span>
+    <span class="pill">LocalStorage only</span>
+    <span class="pill">No tracking</span>
+  </footer>
+
+  <script>
+    // --- Simple local store wrapper
+    const LS_KEY = 'luma_kids_finance_v1';
+    const state = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    state.allowances = state.allowances || {};   // { kid: { amount, period } }
+    state.chores     = state.chores || [];       // [ { kid, title, reward, done } ]
+    state.goals      = state.goals || [];        // [ { kid, title, target, saved } ]
+    state.balances   = state.balances || {};     // { kid: number }
+
+    const save = () => localStorage.setItem(LS_KEY, JSON.stringify(state));
+
+    // --- Elements
+    const $ = (id) => document.getElementById(id);
+
+    // Allowances
+    const renderAllowances = () => {
+      const wrap = $('allowanceList');
+      const kids = Object.keys(state.allowances);
+      if (!kids.length) { wrap.innerHTML = '<p class="muted">No allowances yet.</p>'; return; }
+      wrap.innerHTML = kids.map(k => {
+        const a = state.allowances[k];
+        return \`<div class="row" style="justify-content:space-between;align-items:center;border:1px solid #28304e;padding:.6rem;border-radius:12px;">
+          <div><strong>\${k}</strong><br><span class="muted">£\${(+a.amount).toFixed(2)} / \${a.period}</span></div>
+          <button data-kid="\${k}" class="remove-allowance danger pill">Remove</button>
+        </div>\`;
+      }).join('');
+      wrap.querySelectorAll('.remove-allowance').forEach(btn=>{
+        btn.addEventListener('click', e=>{
+          const k = e.currentTarget.dataset.kid;
+          delete state.allowances[k]; save(); renderAllowances();
+        });
+      });
+    };
+
+    $('addAllowanceBtn').addEventListener('click', ()=>{
+      const kid = $('kidName').value.trim();
+      const amount = parseFloat($('allowanceAmount').value);
+      const period = $('allowancePeriod').value;
+      if(!kid || isNaN(amount)) return alert('Enter child name and amount.');
+      state.allowances[kid] = { amount, period };
+      state.balances[kid] = state.balances[kid] || 0;
+      save(); renderAllowances(); renderBalances();
+      $('kidName').value = ''; $('allowanceAmount').value = '';
+    });
+
+    // Chores
+    const renderChores = () => {
+      const tbody = $('choreTableBody');
+      if (!state.chores.length) { tbody.innerHTML = '<tr><td colspan="5" class="muted">No chores yet.</td></tr>'; return; }
+      tbody.innerHTML = state.chores.map((c,i)=>\`
+        <tr>
+          <td>\${c.kid}</td>
+          <td>\${c.title}</td>
+          <td>£\${(+c.reward).toFixed(2)}</td>
+          <td>\${c.done ? '<span class="pill success">Done</span>' : '<span class="pill">Open</span>'}</td>
+          <td>
+            <button class="pill" data-i="\${i}" data-act="toggle">\${c.done ? 'Undo' : 'Complete'}</button>
+            <button class="pill danger" data-i="\${i}" data-act="delete">Delete</button>
+          </td>
+        </tr>\`).join('');
+      tbody.querySelectorAll('button').forEach(btn=>{
+        btn.addEventListener('click', e=>{
+          const i = +e.currentTarget.dataset.i;
+          const act = e.currentTarget.dataset.act;
+          if (act==='toggle'){
+            state.chores[i].done = !state.chores[i].done;
+            // Auto credit on complete
+            if (state.chores[i].done){
+              const k = state.chores[i].kid;
+              state.balances[k] = (state.balances[k]||0) + (+state.chores[i].reward||0);
+            }
+          } else if (act==='delete'){
+            state.chores.splice(i,1);
+          }
+          save(); renderChores(); renderBalances();
+        });
+      });
+    };
+
+    $('addChoreBtn').addEventListener('click', ()=>{
+      const kid = $('choreKid').value.trim();
+      const title = $('choreTitle').value.trim();
+      const reward = parseFloat($('choreReward').value);
+      if(!kid || !title || isNaN(reward)) return alert('Enter child, chore, reward.');
+      state.chores.push({ kid, title, reward, done:false });
+      state.balances[kid] = state.balances[kid] || 0;
+      save(); renderChores(); renderBalances();
+      $('choreKid').value=''; $('choreTitle').value=''; $('choreReward').value='';
+    });
+
+    // Goals
+    const renderGoals = () => {
+      const wrap = $('goalsWrap');
+      if (!state.goals.length){ wrap.innerHTML = '<p class="muted">No goals yet.</p>'; return; }
+      wrap.innerHTML = state.goals.map((g, i)=>{
+        const pct = Math.min(100, Math.round(((+g.saved||0) / Math.max(1,+g.target)) * 100));
+        return \`<div class="card" style="background:#0b1022;">
+          <div class="row" style="justify-content:space-between;">
+            <div>
+              <strong>\${g.kid} — \${g.title}</strong><br/>
+              <span class="muted">£\${(+g.saved||0).toFixed(2)} / £\${(+g.target).toFixed(2)} (\${pct}%)</span>
+            </div>
+            <button class="pill danger" data-i="\${i}" data-act="delete-goal">Delete</button>
+          </div>
+          <div style="margin:.6rem 0;">
+            <progress max="\${g.target}" value="\${g.saved||0}"></progress>
+          </div>
+          <div class="row">
+            <input type="number" step="0.01" placeholder="Add to goal" data-i="\${i}" class="goal-add-input"/>
+            <button class="pill" data-i="\${i}" data-act="add-to-goal">Add</button>
+          </div>
+        </div>\`;
+      }).join('');
+
+      wrap.querySelectorAll('button').forEach(btn=>{
+        btn.addEventListener('click', e=>{
+          const i = +e.currentTarget.dataset.i;
+          const act = e.currentTarget.dataset.act;
+          if (act==='delete-goal'){
+            state.goals.splice(i,1);
+          } else if (act==='add-to-goal'){
+            const input = wrap.querySelector(\`input.goal-add-input[data-i="\${i}"]\`);
+            const amt = parseFloat(input.value);
+            if (!isNaN(amt)){
+              state.goals[i].saved = (+state.goals[i].saved||0) + amt;
+              const k = state.goals[i].kid;
+              state.balances[k] = (state.balances[k]||0) - amt;
+            }
+          }
+          save(); renderGoals(); renderBalances();
+        });
+      });
+    };
+
+    $('addGoalBtn').addEventListener('click', ()=>{
+      const kid = $('goalKid').value.trim();
+      const title = $('goalTitle').value.trim();
+      const target = parseFloat($('goalTarget').value);
+      if(!kid || !title || isNaN(target)) return alert('Enter child, goal, and target.');
+      state.goals.push({ kid, title, target, saved:0 });
+      state.balances[kid] = state.balances[kid] || 0;
+      save(); renderGoals(); renderBalances();
+      $('goalKid').value=''; $('goalTitle').value=''; $('goalTarget').value='';
+    });
+
+    // Piggy bank
+    const renderBalances = () => {
+      const wrap = $('balances');
+      const kids = Object.keys(state.balances);
+      if (!kids.length){ wrap.innerHTML = '<p class="muted">No balances yet.</p>'; return; }
+      wrap.innerHTML = kids.map(k=>\`
+        <div class="row" style="justify-content:space-between; border:1px solid #28304e; padding:.6rem; border-radius:12px;">
+          <div><strong>\${k}</strong><br/><span class="muted">Balance: £\${(+state.balances[k]).toFixed(2)}</span></div>
+          <button class="pill danger" data-kid="\${k}" data-act="reset">Reset</button>
+        </div>\`).join('');
+      wrap.querySelectorAll('button').forEach(btn=>{
+        btn.addEventListener('click', e=>{
+          const k = e.currentTarget.dataset.kid;
+          if (confirm(\`Reset balance for \${k}?\`)) {
+            state.balances[k] = 0; save(); renderBalances();
+          }
+        });
+      });
+    };
+
+    $('bankDepositBtn').addEventListener('click', ()=>{
+      const kid = $('bankKid').value.trim();
+      const amt = parseFloat($('bankAmount').value);
+      if(!kid || isNaN(amt)) return alert('Enter child and amount.');
+      state.balances[kid] = (state.balances[kid]||0) + amt;
+      save(); renderBalances();
+      $('bankKid').value=''; $('bankAmount').value='';
+    });
+    $('bankWithdrawBtn').addEventListener('click', ()=>{
+      const kid = $('bankKid').value.trim();
+      const amt = parseFloat($('bankAmount').value);
+      if(!kid || isNaN(amt)) return alert('Enter child and amount.');
+      state.balances[kid] = (state.balances[kid]||0) - amt;
+      save(); renderBalances();
+      $('bankKid').value=''; $('bankAmount').value='';
+    });
+
+    // Initial renders
+    renderAllowances(); renderChores(); renderGoals(); renderBalances();
+  </script>
+</body>
+</html>
