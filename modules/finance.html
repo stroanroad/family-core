@@ -3,16 +3,378 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Finance - Luma Family Core</title>
+  <title>Finance - Luma Family Core (Pro)</title>
   <link rel="stylesheet" href="../style.css">
+  <style>
+    .card { background:#0f1220; color:#e8f0ff; padding:1rem; border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,.25); margin:.8rem 0; }
+    .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+    input, select, button, textarea {
+      padding:.6rem .8rem; border-radius:12px; border:1px solid #2a3355; background:#11152a; color:#e8f0ff;
+    }
+    button { cursor:pointer; border:1px solid #2f6df3; }
+    table { width:100%; border-collapse:collapse; margin-top:.8rem; }
+    th, td { padding:.6rem; border-bottom:1px solid #28304e; text-align:left; }
+    .muted { color:#9bb0ff; opacity:.85; }
+    .pill { padding:.2rem .6rem; border-radius:999px; border:1px solid #2a3355; font-size:.85rem; }
+    .income { color:#23c55e; }
+    .expense { color:#ef4444; }
+    .grid { display:grid; gap:1rem; }
+    @media (min-width: 980px){ .grid{ grid-template-columns:1.1fr 1fr; } }
+    .right-col .card{ height: fit-content; }
+    .total { font-weight:700; }
+    .danger { border-color:#ef4444; color:#ef4444; }
+  </style>
 </head>
 <body>
   <header>
-    <h1>💰 Finance</h1>
+    <h1>💰 Finance (Pro)</h1>
+    <p class="muted">Local/offline personal ops: accounts, payees, transactions, recurring (direct-debit-like), export.</p>
+    <p><a class="link" href="../index.html">⬅ Back to Dashboard</a></p>
   </header>
-  <main>
-    <p>Track budgets, bills, savings, and allowances here.</p>
-    <a href="../index.html">⬅ Back to Dashboard</a>
+
+  <main class="grid">
+    <section class="card">
+      <h2>Accounts & Payees</h2>
+      <div class="row">
+        <input id="accName" placeholder="New account (e.g., Main)">
+        <button id="addAccBtn">Add Account</button>
+        <span class="muted">Use multiple accounts to separate life buckets.</span>
+      </div>
+      <div id="accountsList" class="muted" style="margin:.5rem 0;"></div>
+      <hr style="border-color:#28304e;border-width:0 0 1px;margin:1rem 0;">
+      <div class="row">
+        <input id="payeeName" placeholder="New payee (e.g., Rent / HMRC / Utilities)">
+        <button id="addPayeeBtn">Add Payee</button>
+      </div>
+      <div id="payeesList" class="muted" style="margin:.5rem 0;"></div>
+    </section>
+
+    <section class="card right-col">
+      <h2>Balances</h2>
+      <div id="balances"></div>
+      <p class="total" id="totalBalance"></p>
+    </section>
+
+    <section class="card">
+      <h2>Add Transaction</h2>
+      <div class="row">
+        <select id="txAccount"></select>
+        <input id="txDesc" placeholder="Description (e.g., Groceries)">
+        <input type="number" id="txAmount" placeholder="Amount (£)" step="0.01">
+        <select id="txType"><option value="income">Income</option><option value="expense">Expense</option></select>
+        <input id="txCategory" placeholder="Category (e.g., Rent, Food, Tax)">
+        <select id="txPayee"></select>
+        <input type="date" id="txDate">
+        <button id="addTxBtn">Add</button>
+      </div>
+      <p class="muted">Tip: leave Date empty to auto-fill today.</p>
+    </section>
+
+    <section class="card">
+      <h2>Recurring Payments (Direct-Debit-like)</h2>
+      <div class="row">
+        <select id="recAccount"></select>
+        <input id="recDesc" placeholder="Name (e.g., Rent)">
+        <input type="number" id="recAmount" placeholder="Amount (£)" step="0.01">
+        <select id="recType"><option value="expense">Expense</option><option value="income">Income</option></select>
+        <input id="recCategory" placeholder="Category (e.g., Rent, Salary)">
+        <select id="recPayee"></select>
+        <select id="recFreq"><option value="monthly">Monthly</option><option value="weekly">Weekly</option></select>
+        <input type="date" id="recStart">
+        <button id="addRecBtn">Add Recurring</button>
+      </div>
+      <div id="recList" style="margin-top:.6rem;"></div>
+      <div class="row" style="margin-top:.6rem;">
+        <button id="runDueBtn">Run Due Now</button>
+        <span class="muted">This posts all items whose next date ≤ today.</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Transactions</h2>
+      <div class="row">
+        <input id="filterText" placeholder="Search desc/category/payee">
+        <select id="filterAccount"></select>
+        <select id="filterType"><option value="">All</option><option value="income">Income</option><option value="expense">Expense</option></select>
+        <button id="exportCsvBtn">Export CSV</button>
+        <button id="backupBtn">Backup JSON</button>
+        <label class="pill" for="restoreFile" style="cursor:pointer;">Restore JSON<input type="file" id="restoreFile" accept="application/json" style="display:none;"></label>
+      </div>
+      <table>
+        <thead><tr><th>Date</th><th>Account</th><th>Description</th><th>Type</th><th>Category</th><th>Payee</th><th>Amount</th><th>Action</th></tr></thead>
+        <tbody id="txTableBody"></tbody>
+      </table>
+    </section>
   </main>
+
+  <footer class="muted" style="margin-top:2rem;">
+    <span class="pill">LocalStorage only</span>
+    <span class="pill">Anonymous by default</span>
+    <span class="pill">No tracking</span>
+  </footer>
+
+  <script>
+    const LS_KEY = "luma_finance_pro_v1";
+    const nowISO = () => new Date().toISOString().slice(0,10);
+    const addDays = (d,n)=>{ const x = new Date(d); x.setDate(x.getDate()+n); return x.toISOString().slice(0,10); };
+    const addMonths = (d,n)=>{ const x=new Date(d); x.setMonth(x.getMonth()+n); return x.toISOString().slice(0,10); };
+
+    const state = JSON.parse(localStorage.getItem(LS_KEY) || JSON.stringify({
+      accounts: ["Main"],
+      payees: ["Rent","Utilities","Groceries","HMRC","Salary"],
+      tx: [], // {date, account, desc, type, category, payee, amount}
+      recurring: [] // {account, desc, type, category, payee, amount, freq, nextDate}
+    }));
+
+    const save = ()=> localStorage.setItem(LS_KEY, JSON.stringify(state));
+    const $ = id => document.getElementById(id);
+
+    // Populate selects
+    function refillSelects(){
+      const accountSelects = [$("txAccount"), $("recAccount"), $("filterAccount")];
+      accountSelects.forEach(sel=>{
+        if(!sel) return;
+        const val = sel.value;
+        sel.innerHTML = '<option value="">'+(sel.id==="filterAccount"?"All accounts":"Select account")+'</option>' +
+          state.accounts.map(a=>`<option value="${a}">${a}</option>`).join('');
+        if(val) sel.value = val;
+        if(!sel.value && sel.id!=="filterAccount" && state.accounts[0]) sel.value = state.accounts[0];
+      });
+
+      const payeeSelects = [$("txPayee"), $("recPayee")];
+      payeeSelects.forEach(sel=>{
+        const val = sel.value;
+        sel.innerHTML = '<option value="">(none)</option>' + state.payees.map(p=>`<option value="${p}">${p}</option>`).join('');
+        if(val) sel.value = val;
+      });
+    }
+
+    // Accounts & payees UI
+    function renderAccounts(){
+      $("accountsList").innerHTML = state.accounts.length ? state.accounts.map(a=>`<span class="pill">${a}</span>`).join(" ") : '<span class="muted">No accounts yet.</span>';
+    }
+    function renderPayees(){
+      $("payeesList").innerHTML = state.payees.length ? state.payees.map(p=>`<span class="pill">${p}</span>`).join(" ") : '<span class="muted">No payees yet.</span>';
+    }
+
+    $("addAccBtn").addEventListener("click", ()=>{
+      const n = $("accName").value.trim(); if(!n) return;
+      if(!state.accounts.includes(n)) state.accounts.push(n);
+      $("accName").value = ""; save(); refillSelects(); renderAccounts(); renderBalances();
+    });
+
+    $("addPayeeBtn").addEventListener("click", ()=>{
+      const n = $("payeeName").value.trim(); if(!n) return;
+      if(!state.payees.includes(n)) state.payees.push(n);
+      $("payeeName").value = ""; save(); refillSelects(); renderPayees();
+    });
+
+    // Add transaction
+    $("addTxBtn").addEventListener("click", ()=>{
+      const account = $("txAccount").value;
+      const desc = $("txDesc").value.trim();
+      const amount = parseFloat($("txAmount").value);
+      const type = $("txType").value;
+      const category = $("txCategory").value.trim();
+      const payee = $("txPayee").value;
+      const date = $("txDate").value || nowISO();
+      if(!account || !desc || isNaN(amount)) return alert("Select account, add description and amount.");
+      state.tx.push({ date, account, desc, type, category, payee, amount });
+      $("txDesc").value = ""; $("txAmount").value=""; $("txCategory").value=""; $("txPayee").value="";
+      $("txDate").value = "";
+      save(); renderTx(); renderBalances();
+    });
+
+    // Recurring
+    $("addRecBtn").addEventListener("click", ()=>{
+      const account = $("recAccount").value;
+      const desc = $("recDesc").value.trim();
+      const amount = parseFloat($("recAmount").value);
+      const type = $("recType").value;
+      const category = $("recCategory").value.trim();
+      const payee = $("recPayee").value;
+      const freq = $("recFreq").value; // weekly/monthly
+      let start = $("recStart").value || nowISO();
+      if(!account || !desc || isNaN(amount)) return alert("Select account, add name and amount.");
+      state.recurring.push({ account, desc, amount, type, category, payee, freq, nextDate: start });
+      $("recDesc").value=""; $("recAmount").value=""; $("recCategory").value=""; $("recPayee").value=""; $("recStart").value="";
+      save(); renderRecurring();
+    });
+
+    function advanceDate(d,freq){ return (freq==="weekly") ? addDays(d,7) : addMonths(d,1); }
+
+    function renderRecurring(){
+      if(!state.recurring.length){ $("recList").innerHTML = '<p class="muted">No recurring items yet.</p>'; return; }
+      $("recList").innerHTML = state.recurring.map((r,i)=>`
+        <div class="row" style="justify-content:space-between;border:1px solid #28304e;padding:.6rem;border-radius:12px;">
+          <div>
+            <strong>${r.desc}</strong> — <span class="${r.type==='income'?'income':'expense'}">£${r.amount.toFixed(2)}</span>
+            <br><span class="muted">${r.freq}, next: ${r.nextDate} • ${r.account} ${r.category?('• '+r.category):''} ${r.payee?('• '+r.payee):''}</span>
+          </div>
+          <div class="row">
+            <button class="pill" data-i="${i}" data-act="run">Run once</button>
+            <button class="pill danger" data-i="${i}" data-act="del">Delete</button>
+          </div>
+        </div>
+      `).join("");
+
+      $("recList").querySelectorAll("button").forEach(btn=>{
+        btn.addEventListener("click", e=>{
+          const i = +e.currentTarget.dataset.i;
+          const act = e.currentTarget.dataset.act;
+          if(act==="del"){ state.recurring.splice(i,1); save(); renderRecurring(); return; }
+          if(act==="run"){
+            const r = state.recurring[i];
+            postRecurring(r);
+            r.nextDate = advanceDate(r.nextDate, r.freq);
+            save(); renderRecurring(); renderTx(); renderBalances();
+          }
+        });
+      });
+    }
+
+    function postRecurring(r){
+      state.tx.push({
+        date: r.nextDate,
+        account: r.account,
+        desc: r.desc + " (recurring)",
+        type: r.type,
+        category: r.category,
+        payee: r.payee,
+        amount: r.amount
+      });
+    }
+
+    $("runDueBtn").addEventListener("click", ()=>{
+      const today = nowISO();
+      let ran = 0;
+      state.recurring.forEach(r=>{
+        while(r.nextDate && r.nextDate <= today){
+          postRecurring(r);
+          r.nextDate = advanceDate(r.nextDate, r.freq);
+          ran++;
+        }
+      });
+      save(); renderRecurring(); renderTx(); renderBalances();
+      alert(ran ? `Posted ${ran} due recurring item(s).` : "Nothing due today.");
+    });
+
+    // Transactions table + filters
+    function renderTx(){
+      const tbody = $("txTableBody");
+      const q = ($("filterText").value||"").toLowerCase();
+      const fa = $("filterAccount").value;
+      const ft = $("filterType").value;
+
+      const filtered = state.tx.filter(t=>{
+        const matchesQ = !q || [t.desc, t.category, t.payee].join(" ").toLowerCase().includes(q);
+        const matchesA = !fa || t.account===fa;
+        const matchesT = !ft || t.type===ft;
+        return matchesQ && matchesA && matchesT;
+      });
+
+      if(!filtered.length){ tbody.innerHTML = '<tr><td colspan="8" class="muted">No transactions found.</td></tr>'; return; }
+
+      tbody.innerHTML = filtered.map((t,i)=>{
+        const cls = t.type==="income" ? "income" : "expense";
+        return `<tr>
+          <td>${t.date}</td>
+          <td>${t.account}</td>
+          <td>${t.desc}</td>
+          <td><span class="pill ${cls}">${t.type}</span></td>
+          <td>${t.category||""}</td>
+          <td>${t.payee||""}</td>
+          <td class="${cls}">£${(+t.amount).toFixed(2)}</td>
+          <td><button class="pill danger" data-i="${i}" data-act="del">Delete</button></td>
+        </tr>`;
+      }).join("");
+
+      tbody.querySelectorAll("button").forEach(btn=>{
+        btn.addEventListener("click", e=>{
+          const i = +e.currentTarget.dataset.i;
+          const act = e.currentTarget.dataset.act;
+          if(act==="del"){ 
+            // delete by identity: find index in state.tx of filtered[i]
+            const row = filtered[i];
+            const idx = state.tx.indexOf(row);
+            if(idx>-1) state.tx.splice(idx,1);
+            save(); renderTx(); renderBalances();
+          }
+        });
+      });
+    }
+
+    // Balances
+    function renderBalances(){
+      const byAcc = {};
+      state.accounts.forEach(a=>byAcc[a]=0);
+      state.tx.forEach(t=>{
+        byAcc[t.account] = byAcc[t.account] || 0;
+        byAcc[t.account] += (t.type==="income" ? +t.amount : -t.amount);
+      });
+      const rows = Object.keys(byAcc).map(a=>`<div class="row" style="justify-content:space-between;border:1px solid #28304e;padding:.6rem;border-radius:12px;">
+        <div><strong>${a}</strong></div>
+        <div class="${byAcc[a]>=0?'income':'expense'}">£${byAcc[a].toFixed(2)}</div>
+      </div>`);
+      $("balances").innerHTML = rows.join("") || '<p class="muted">No accounts yet.</p>';
+      const total = Object.values(byAcc).reduce((s,v)=>s+v,0);
+      $("totalBalance").textContent = "Total balance: £" + total.toFixed(2);
+    }
+
+    // Export CSV
+    $("exportCsvBtn").addEventListener("click", ()=>{
+      const headers = ["date","account","desc","type","category","payee","amount"];
+      const rows = [headers.join(",")].concat(state.tx.map(t=>{
+        const line = headers.map(h=>{
+          let v = (t[h] ?? "").toString().replace(/"/g,'""');
+          if(/,|\n|"/.test(v)) v = `"${v}"`;
+          return v;
+        }).join(",");
+        return line;
+      }));
+      const blob = new Blob([rows.join("\n")], {type:"text/csv;charset=utf-8;"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "luma-finance.csv";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    // Backup / Restore
+    $("backupBtn").addEventListener("click", ()=>{
+      const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "luma-finance-backup.json";
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    });
+
+    $("restoreFile").addEventListener("change", e=>{
+      const f = e.target.files[0]; if(!f) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{ 
+        try{
+          const obj = JSON.parse(reader.result);
+          if(!obj || !obj.accounts || !obj.tx || !obj.recurring) throw new Error("Invalid backup");
+          state.accounts = obj.accounts; state.payees = obj.payees || [];
+          state.tx = obj.tx; state.recurring = obj.recurring;
+          save(); refillSelects(); renderAccounts(); renderPayees(); renderRecurring(); renderTx(); renderBalances();
+          alert("Restore complete.");
+        }catch(err){ alert("Restore failed: " + err.message); }
+      };
+      reader.readAsText(f);
+      e.target.value = "";
+    });
+
+    // Filters live
+    ["filterText","filterAccount","filterType"].forEach(id=>{
+      $(id).addEventListener("input", renderTx);
+      $(id).addEventListener("change", renderTx);
+    });
+
+    // Init
+    refillSelects(); renderAccounts(); renderPayees(); renderRecurring(); renderTx(); renderBalances();
+  </script>
 </body>
 </html>
